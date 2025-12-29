@@ -1,22 +1,23 @@
 % ------------------------------------------------------------
-\chapter{Implementation}
+\chapter{IMPLEMENTATION}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{6pt}
 {\setstretch{1.5}
 
-This chapter describes the practical implementation of the \textbf{ResQNow} emergency response system through detailed pseudocode and actual code implementations. It explains how the core functionalities—SOS alert triggering, Bluetooth Low Energy (BLE) based offline communication, AI-driven emergency classification, and backend services—were developed and integrated. The chapter presents code-level evidence to demonstrate the working of critical system modules.
+This chapter describes the practical implementation of the ResQNow emergency response system through detailed pseudocode and code snippets.  It explains how the core functionalities—SOS alert triggering, Bluetooth Low Energy (BLE) based offline communication, and AI-driven emergency classification—were developed and integrated. 
 
 % -----------------------------------------------------------------------------
 \section{SOS Activation and Emergency Alert Implementation}
 
-The SOS module serves as the primary emergency trigger in ResQNow. It enables users to initiate emergency alerts manually or automatically based on AI classification. Upon activation, the system captures GPS location, timestamps the event, and initiates alert propagation through available communication channels.
+The SOS module serves as the primary emergency trigger in ResQNow. Upon activation, the system captures GPS location, timestamps the event, and initiates alert propagation through available communication channels. 
 
 \subsection{SOS Activation Pseudocode}
 
-The following pseudocode outlines the SOS activation workflow:
+Algorithm~\ref{alg:sos_activation} demonstrates the entire lifecycle of SOS initiation, detailing how the application processes an emergency request from the moment the user triggers it. The workflow begins when an SOS input is received via a button press or voice command, after which the system immediately retrieves the user’s real-time GPS coordinates and authenticated user identity. These details are encapsulated into a structured SOS data object, which also includes a timestamp and initializes severity status as pending. The algorithm further incorporates an intelligent connectivity check—if the device has internet access, the alert is transmitted to the backend server and emergency contacts receive notifications instantly. In case of offline conditions, the message is queued locally and broadcasted using BLE so nearby devices can relay it until it reaches a device with network access, ensuring message delivery even in network-restricted environments. This design guarantees resilience and reliability in emergency situations.
 
 \begin{algorithm}[H]
 \caption{SOS Activation and Alert Dispatch}
+\label{alg:sos_activation}
 \begin{algorithmic}[1]
 \State \textbf{Input:} User trigger (button press or voice command)
 \State \textbf{Output:} SOS alert dispatched to backend and emergency contacts
@@ -29,7 +30,7 @@ The following pseudocode outlines the SOS activation workflow:
     \State $sosData \gets$ \{
     \State \hspace{1cm} userId: $userId$,
     \State \hspace{1cm} latitude: $location.latitude$,
-    \State \hspace{1cm} longitude: $location.longitude$,
+    \State \hspace{1cm} longitude:  $location.longitude$,
     \State \hspace{1cm} timestamp: $timestamp$,
     \State \hspace{1cm} severity: "pending\_classification"
     \State \}
@@ -47,96 +48,61 @@ The following pseudocode outlines the SOS activation workflow:
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{SOS User Interface Implementation}
+\subsection{SOS Implementation Code}
 
-The SOS activation interface is implemented with minimal interaction requirements to ensure rapid activation during emergencies. Figure~\ref{fig:sos_ui} presents the user interface implementation showing the emergency trigger button and status display.
-
+Figure~\ref{fig:sos_code} presents the Dart implementation of the SOS activation module, highlighting how the system programmatically handles emergency initiation. The \texttt{activateSOS()} function first utilizes the Geolocator package to fetch the device's GPS coordinates with high accuracy, applying a timeout of 10 seconds to prevent indefinite waits. Once the location is retrieved, the function obtains the authenticated user’s UID from Firebase Authentication and constructs an SOS payload that encapsulates latitude, longitude, timestamp formatted in ISO 8601, and a default severity status. To determine the appropriate dispatch path, the function performs a network availability check using the Connectivity package. If internet connectivity is available, the SOS payload is transmitted to the backend server via HTTP POST request and emergency contacts are notified immediately. In offline conditions, the alert is stored in a local SQLite queue for persistence and a BLE broadcast is initiated to enable peer-to-peer relay until a device with connectivity is reached.
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{chapters/sos_ui.png}
-    \caption{SOS activation interface enabling rapid emergency alert triggering}
-    \label{fig:sos_ui}
+    \includegraphics[width=0.95\textwidth]{chapters/sos_code.png}
+    \caption{SOS activation implementation showing location capture, connectivity check, and alert dispatch logic}
+    \label{fig:sos_code}
 \end{figure}
-
-\subsection{Backend SOS Handling Implementation}
-
-The backend validates incoming SOS requests, stores emergency data in Firestore, triggers multi-channel notifications, and tracks responder acknowledgments. Figure~\ref{fig:sos_backend} illustrates the FastAPI implementation for handling SOS requests, including authentication validation, data persistence, and alert orchestration logic.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{chapters/sos_backend_code.png}
-    \caption{Backend implementation for SOS request handling and alert orchestration}
-    \label{fig:sos_backend}
-\end{figure}
-
-The backend implementation ensures reliable emergency alert coordination with proper error handling and logging mechanisms for system monitoring and debugging purposes.
 
 % -----------------------------------------------------------------------------
 \section{Bluetooth Low Energy (BLE) Offline Communication Implementation}
 
-To support emergency alert delivery in low or no internet connectivity environments, ResQNow implements BLE-based offline SOS relay. The BLE communication module is optimized for low power consumption and dynamically discovers nearby devices running ResQNow to establish secure short-range connections.
+To support emergency alert delivery in low or no internet connectivity environments, ResQNow implements BLE-based offline SOS relay.  The BLE module discovers nearby devices and establishes secure short-range connections for message forwarding. 
 
 \subsection{BLE Message Relay Pseudocode}
 
-The following pseudocode describes the BLE offline relay mechanism:
+Algorithm~\ref{alg:ble_relay} presents the BLE relay process used when internet connectivity is unavailable. The originating device encrypts the SOS data using AES-128 and scans for nearby ResQNow devices. If available, the encrypted message is transmitted via GATT; otherwise, it is queued and retried after a delay. Receiving devices decrypt the payload and either upload it to the server if online or forward it to other devices, forming a lightweight mesh network for offline alert propagation.
 
 \begin{algorithm}[H]
 \caption{BLE Offline SOS Relay}
+\label{alg:ble_relay}
 \begin{algorithmic}[1]
-\State \textbf{Input:} SOS message to be relayed
-\State \textbf{Output:} SOS delivered to device with internet connectivity
-\State
-\Procedure{InitiateBLERelay}{$sosMessage$}
-    \State $encryptedMessage \gets$ \Call{EncryptAES}{$sosMessage$}
-    \State $nearbyDevices \gets$ \Call{ScanForBLEDevices}{}
-    \State
-    \If{$nearbyDevices.length > 0$}
-        \For{each $device$ in $nearbyDevices$}
-            \State \Call{ConnectToDevice}{$device$}
-            \State \Call{TransmitMessage}{$device$, $encryptedMessage$}
-        \EndFor
-    \Else
-        \State \Call{QueueMessage}{$encryptedMessage$}
-        \State \Call{RetryAfterDelay}{5 seconds}
-    \EndIf
+\State \textbf{Input:} SOS message
+\State \textbf{Output:} Delivered to an internet-active device
+\Procedure{InitiateBLERelay}{$msg$}
+\State $enc \gets$ EncryptAES($msg$)
+\State $devices \gets$ ScanForBLEDevices()
+\If{$devices \neq \emptyset$}
+\For{$d$ in $devices$}
+\State Connect($d$); Send($d$, $enc$)
+\EndFor
+\Else
+\State Queue($enc$); Retry(5s)
+\EndIf
 \EndProcedure
-\State
-\Procedure{ReceiveBLEMessage}{$encryptedMessage$, $sourceDevice$}
-    \State $sosMessage \gets$ \Call{DecryptAES}{$encryptedMessage$}
-    \State
-    \If{InternetAvailable()}
-        \State \Call{UploadSOSToBackend}{$sosMessage$}
-        \State \Call{SendAcknowledgment}{$sourceDevice$}
-    \Else
-        \State \Call{RelayToOtherDevices}{$encryptedMessage$}
-    \EndIf
+\Procedure{ReceiveBLE}{$encMsg$, $src$}
+\State $msg \gets$ DecryptAES($encMsg$)
+\If{InternetAvailable()} \State Upload($msg$); Ack($src$)
+\Else \State Relay($encMsg$)
+\EndIf
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{BLE Relay Workflow Diagram}
+\subsection{BLE Implementation Code}
 
-The BLE module enables nearby ResQNow devices to form a temporary peer-to-peer relay network where encrypted SOS packets are forwarded hop-by-hop until a device with internet connectivity is reached. Figure~\ref{fig:ble_workflow} illustrates the complete BLE offline relay workflow, showing device discovery, message encryption, peer-to-peer transmission, and eventual upload to the backend server.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{chapters/ble_relay_workflow.png}
-    \caption{BLE-based offline SOS relay mechanism across nearby devices}
-    \label{fig:ble_workflow}
-\end{figure}
-
-\subsection{BLE Encryption and Transmission Code}
-
-To protect sensitive emergency data during transmission, BLE messages are encrypted using AES-128 in GCM (Galois/Counter Mode) prior to wireless transmission. Figure~\ref{fig:ble_code} demonstrates the code-level implementation for encrypted BLE message transmission and reception, including key generation, message encryption, Bluetooth characteristic writing, and decryption upon receipt.
+The following code snippet implements BLE communication using the flutter\_blue\_plus package.  The \texttt{initiateBLERelay()} function begins by converting the SOS data to JSON and encrypting it using the encrypt package with AES-128 in GCM mode, generating a random initialization vector for each message. The \texttt{scanForDevices()} method initiates a 10-second BLE scan filtered by the ResQNow service UUID (defined as a constant). For each discovered device, the code establishes a connection, discovers services, locates the SOS relay characteristic, and writes the encrypted payload.  The \texttt{onMessageReceived()} callback handles incoming messages by decrypting the payload, parsing the JSON, checking connectivity, and either uploading to Firebase or calling \texttt{relayToOthers()} to continue the mesh relay. Error handling includes connection timeouts, encryption failures, and retry logic. Figure~\ref{fig:ble_code} presents this implementation.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{chapters/ble_encryption_code.png}
-    \caption{Encrypted BLE message transmission and reception implementation}
+    \includegraphics[width=0.95\textwidth]{chapters/ble_code.png}
+    \caption{BLE relay implementation with AES encryption, device scanning, and mesh relay logic}
     \label{fig:ble_code}
 \end{figure}
-
-This implementation ensures both confidentiality and integrity of emergency data during offline peer-to-peer relay, preventing unauthorized access and tampering.
 
 % -----------------------------------------------------------------------------
 \section{AI-Based Emergency Classification Implementation}
@@ -145,10 +111,11 @@ Artificial Intelligence enables ResQNow to automatically analyze user inputs and
 
 \subsection{AI Classification Pseudocode}
 
-The following pseudocode outlines the AI-based emergency classification process:
+The AI classification process begins by checking network availability to determine which classification method to use. When online, the system sends the user's emergency description to a cloud AI service (Google Gemini or OpenAI GPT) via API call. The response is parsed to extract the predicted emergency type (cardiac arrest, severe bleeding, burn injury, fracture, or general emergency) and severity level (HIGH, MODERATE, or LOW). If the AI returns a confidence score below 0.7, indicating uncertainty, the system supplements or overrides the result using rule-based fallback logic. When offline, the system relies entirely on rule-based classification, which extracts keywords from the user input and matches them against predefined patterns. Keywords like "unconscious" or "not breathing" trigger HIGH severity cardiac arrest classification, while "bleeding" triggers severe bleeding, and so on. Algorithm~\ref{alg: ai_classification} outlines this process. 
 
 \begin{algorithm}[H]
 \caption{AI-Based Emergency Classification}
+\label{alg: ai_classification}
 \begin{algorithmic}[1]
 \State \textbf{Input:} User description of emergency (text or voice)
 \State \textbf{Output:} Emergency type and severity level
@@ -188,66 +155,45 @@ The following pseudocode outlines the AI-based emergency classification process:
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Cloud-Based AI Classification Implementation}
+\subsection{AI Chatbot Implementation Code}
 
-The online AI module processes textual or voice-based user descriptions using cloud-based conversational AI services (OpenAI GPT or Google Gemini) to infer emergency context, extract symptoms, and determine severity level. Figure~\ref{fig:ai_online} shows the AI classification logic integrated with Firebase Firestore for persistent storage, including the API request structure, response parsing, confidence threshold checking, and database update operations.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.95\textwidth]{chapters/ai_online_code.png}
-    \caption{Cloud-based AI emergency classification and Firestore integration}
-    \label{fig:ai_online}
-\end{figure}
-
-The implementation includes error handling for API failures and automatic fallback to rule-based classification when cloud services are unavailable or return low-confidence results.
-
-\subsection{Offline AI Fallback Implementation}
-
-To maintain functionality during connectivity loss or cloud service unavailability, ResQNow employs a rule-based fallback classification mechanism using keyword matching and predefined emergency patterns. Figure~\ref{fig:ai_offline} illustrates the offline AI decision logic, showing the keyword extraction process, severity mapping rules, and classification output structure used when cloud services are unavailable.
+The following code snippet implements the AI-powered emergency chatbot using Google Gemini API. The \texttt{AIChatService} class maintains conversation history as a list of message objects to enable multi-turn interactions. The \texttt{classifyEmergency()} function constructs a prompt that includes the system instruction (defining the AI's role as an emergency classifier), conversation history for context, and the current user message. It sends an HTTP POST request to the Gemini API endpoint with the API key and receives a JSON response containing the generated text, confidence score, and extracted emergency details. The \texttt{parseResponse()} method uses regular expressions to extract emergency type and severity from the AI's natural language response. The \texttt{ruleBasedFallback()} function implements keyword matching using a Map of emergency keywords to classification results, iterating through the user input to find matches. Error handling includes API timeout (30 seconds), rate limiting with exponential backoff, and automatic fallback to rule-based classification on any API failure. Figure~\ref{fig:ai_code} presents this implementation. 
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{chapters/ai_offline_logic.png}
-    \caption{Rule-based offline emergency classification logic}
-    \label{fig:ai_offline}
+    \includegraphics[width=0.95\textwidth]{chapters/ai_code.png}
+    \caption{AI chatbot implementation with Gemini API integration, conversation management, and rule-based fallback}
+    \label{fig:ai_code}
 \end{figure}
-
-This hybrid approach ensures consistent emergency prioritization regardless of network conditions, maintaining system reliability during critical situations.
 
 % -----------------------------------------------------------------------------
 \section{Emergency Contact Notification Implementation}
 
-The notification system ensures reliable alert delivery to emergency contacts through multiple redundant channels including push notifications, SMS, and email.
+The notification system ensures reliable alert delivery to emergency contacts through multiple redundant channels. 
 
 \subsection{Multi-Channel Notification Pseudocode}
 
-The following pseudocode describes the multi-channel notification dispatch mechanism:
+The notification dispatch mechanism retrieves the list of emergency contacts associated with the user who triggered the SOS alert. It generates a Google Maps URL containing the emergency location coordinates for easy navigation.  A notification message is constructed containing the severity level and location link.  For each emergency contact, the system sends notifications through three channels: push notification via Firebase Cloud Messaging using the contact's device token, SMS via Twilio API using the contact's phone number, and email via SendGrid API using the contact's email address. This multi-channel approach maximizes the probability of successful alert delivery even if one channel fails. Algorithm~\ref{alg:notification} describes this mechanism.
 
 \begin{algorithm}[H]
 \caption{Multi-Channel Emergency Notification}
+\label{alg:notification}
 \begin{algorithmic}[1]
 \State \textbf{Input:} SOS alert data, emergency contact list
 \State \textbf{Output:} Notifications sent via multiple channels
 \State
 \Procedure{NotifyEmergencyContacts}{$sosData$}
-    \State $contacts \gets$ \Call{GetEmergencyContacts}{$sosData.userId$}
+    \State $contacts \gets$ \Call{GetEmergencyContacts}{$sosData. userId$}
     \State $locationURL \gets$ \Call{GenerateMapURL}{$sosData.latitude$, $sosData.longitude$}
-    \State
-    \State $message \gets$ "Emergency Alert: " + $sosData.severity$ + 
-    \State \hspace{2cm} " at " + $locationURL$
+    \State $message \gets$ "Emergency Alert: " + $sosData.severity$ + " at " + $locationURL$
     \State
     \For{each $contact$ in $contacts$}
-        \State // Send push notification
-        \State \Call{SendPushNotification}{$contact.deviceToken$, $message$}
-        \State
-        \State // Send SMS
+        \State \Call{SendPushNotification}{$contact. deviceToken$, $message$}
         \State \Call{SendSMS}{$contact.phoneNumber$, $message$}
-        \State
-        \State // Send Email
-        \State \Call{SendEmail}{$contact.email$, "Emergency Alert", $message$}
+        \State \Call{SendEmail}{$contact. email$, "Emergency Alert", $message$}
     \EndFor
     \State
-    \State \Call{LogNotificationStatus}{$sosData.id$, "notifications\_sent"}
+    \State \Call{LogNotificationStatus}{$sosData. id$, "notifications\_sent"}
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
@@ -255,21 +201,21 @@ The following pseudocode describes the multi-channel notification dispatch mecha
 % -----------------------------------------------------------------------------
 \section{Responder Acknowledgment Implementation}
 
-The responder acknowledgment system enables nearby users to acknowledge emergency alerts and coordinate response efforts while preventing duplicate responses through atomic database transactions.
+The responder acknowledgment system enables nearby users to acknowledge emergency alerts while preventing duplicate responses through atomic database transactions.
 
 \subsection{Responder Acknowledgment Pseudocode}
 
-The following pseudocode outlines the responder acknowledgment workflow:
+The acknowledgment workflow uses database transactions to handle concurrent acknowledgment attempts. When a responder attempts to claim an emergency, the system begins a Firestore transaction and retrieves the current SOS alert document. It checks whether another responder has already claimed the alert by examining the responderId field.  If the field is not null, the transaction is rolled back and an error message is returned. Otherwise, the system updates the alert with the responder's ID, name, response timestamp, and changes the status to "ACKNOWLEDGED". The transaction is committed atomically, ensuring that only one responder can successfully claim each emergency even under concurrent access. Finally, the original alert sender is notified that help is on the way.  Algorithm~\ref{alg:responder} outlines this workflow.
 
 \begin{algorithm}[H]
 \caption{Responder Acknowledgment with Concurrency Control}
+\label{alg: responder}
 \begin{algorithmic}[1]
 \State \textbf{Input:} SOS alert ID, responder user ID
 \State \textbf{Output:} Acknowledgment status (success or already taken)
 \State
 \Procedure{AcknowledgeEmergency}{$sosId$, $responderId$}
     \State \Call{BeginTransaction}{}
-    \State
     \State $sosAlert \gets$ \Call{GetSOSAlert}{$sosId$}
     \State
     \If{$sosAlert.responderId \neq null$}
@@ -278,13 +224,11 @@ The following pseudocode outlines the responder acknowledgment workflow:
     \EndIf
     \State
     \State $sosAlert.responderId \gets$ $responderId$
-    \State $sosAlert.responderName \gets$ \Call{GetUserName}{$responderId$}
     \State $sosAlert.responseTimestamp \gets$ \Call{GetCurrentTimestamp}{}
     \State $sosAlert.status \gets$ "ACKNOWLEDGED"
     \State
     \State \Call{UpdateSOSAlert}{$sosAlert$}
     \State \Call{CommitTransaction}{}
-    \State
     \State \Call{NotifyOriginator}{$sosId$, $responderId$}
     \State
     \State \Return "Acknowledgment successful"
@@ -295,76 +239,41 @@ The following pseudocode outlines the responder acknowledgment workflow:
 % -----------------------------------------------------------------------------
 \section{GPS Location Tracking Implementation}
 
-Accurate location tracking is critical for emergency response coordination. The GPS module continuously monitors device location and provides real-time updates during active emergencies.
+Accurate location tracking is critical for emergency response coordination.  The GPS module continuously monitors device location and provides real-time updates during active emergencies.
 
 \subsection{Location Tracking Pseudocode}
 
-The following pseudocode describes the GPS location tracking mechanism:
+The location tracking mechanism initializes by requesting location permission from the user.  Upon permission grant, the system starts a location stream that continuously monitors GPS coordinates. Each location update triggers the \texttt{OnLocationUpdate} procedure, which extracts latitude, longitude, and accuracy values. If an emergency is currently active, the system updates the SOS document in Firestore with the new coordinates and notifies emergency contacts of the location change, enabling real-time tracking.  The location is also cached locally for offline use, ensuring that the most recent known position is available even without GPS signal. Algorithm~\ref{alg:gps} describes this mechanism.
 
 \begin{algorithm}[H]
 \caption{Continuous GPS Location Tracking}
+\label{alg:gps}
 \begin{algorithmic}[1]
 \State \textbf{Input:} Location permission granted
 \State \textbf{Output:} Real-time GPS coordinates
 \State
 \Procedure{InitializeLocationTracking}{}
     \State \Call{RequestLocationPermission}{}
-    \State
     \If{PermissionGranted()}
         \State \Call{StartLocationStream}{}
     \Else
         \State \Call{ShowPermissionError}{}
-        \State \Return
     \EndIf
 \EndProcedure
 \State
 \Procedure{OnLocationUpdate}{$location$}
-    \State $latitude \gets$ $location.latitude$
+    \State $latitude \gets$ $location. latitude$
     \State $longitude \gets$ $location.longitude$
-    \State $accuracy \gets$ $location.accuracy$
-    \State $timestamp \gets$ $location.timestamp$
     \State
     \If{EmergencyActive()}
-        \State \Call{UpdateSOSLocation}{$latitude$, $longitude$, $timestamp$}
+        \State \Call{UpdateSOSLocation}{$latitude$, $longitude$}
         \State \Call{NotifyContactsOfLocationUpdate}{$latitude$, $longitude$}
     \EndIf
-    \State
-    \State \Call{CacheLocation}{$latitude$, $longitude$} // For offline use
+    \State \Call{CacheLocation}{$latitude$, $longitude$}
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
 
-% -----------------------------------------------------------------------------
-\section{Database Schema and Data Models}
-
-The system uses Firebase Firestore as the primary database with the following collection structure and data models.
-
-\subsection{Firestore Data Structure}
-
-The database schema is organized into the following collections:
-
-\begin{itemize}
-    \item \textbf{users/\{userId\}} - User profile information
-    \begin{itemize}
-        \item Fields: name, email, phone, bloodGroup, medicalNotes
-        \item Subcollection: contacts/\{contactId\} - Emergency contacts
-    \end{itemize}
-    
-    \item \textbf{sos\_alerts/\{sosId\}} - Emergency alert records
-    \begin{itemize}
-        \item Fields: userId, latitude, longitude, timestamp, severity, type, status
-        \item Fields: responderId, responderName, responseTimestamp
-    \end{itemize}
-    
-    \item \textbf{ble\_queue/\{messageId\}} - Queued offline messages
-    \begin{itemize}
-        \item Fields: encryptedData, hopCount, originDeviceId, timestamp
-    \end{itemize}
-\end{itemize}
-
-% -----------------------------------------------------------------------------
-\section{Summary}
-
-This chapter presented the complete implementation of the ResQNow emergency response system through detailed pseudocode and code implementations. It demonstrated SOS activation logic, BLE-based offline communication with encryption, AI-driven emergency classification with online and offline support, multi-channel notification dispatch, responder acknowledgment with concurrency control, and GPS location tracking. The presented pseudocode and code-level evidence confirms the technical feasibility, robustness, and real-world readiness of the proposed system.
+% ----------------------------------------------------------------------------- 
 
 }

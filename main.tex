@@ -21,6 +21,7 @@
 %contents that you see in blue colour and brackets, symbols in red  are coding commands do not edit it until you know coding and feel to edit
 
 \documentclass[12pt]{report}% document starts from here with standard document class
+\documentclass[openany]{book}
 
 % Package imports- these are package imports dont edit these packages
 \usepackage{graphicx} % For including graphics
@@ -41,6 +42,8 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage{hyperref} % optional, for clickable links
 \usepackage{titlesec}  % Add this package
+\usepackage{caption}
+
 \titlespacing*{\chapter}{0pt}{-40pt}{10pt} % Reduce space before chapter heading
 
 % Fix: Unicode subscript 2 (₂) in SpO₂ when compiling with pdfLaTeX
@@ -144,6 +147,17 @@
 }
 
 
+% Table caption spacing (unchanged)
+\setlength{\belowcaptionskip}{8pt}
+\captionsetup[table]{skip=8pt}
+
+% Figure caption spacing (reduced)
+\captionsetup[figure]{skip=4pt}
+
+% Space between figure and following text/section
+\setlength{\textfloatsep}{6pt}
+
+
 % ------------------------------------------------------------
 % Reduce space ABOVE titles of TOC, LOF, LOT ONLY
 % (Does NOT affect chapters or section headings)
@@ -158,10 +172,6 @@
 % List of Tables
 \setlength{\cftbeforelottitleskip}{-0.4cm}
 
-% ------------------------------------------------------------
-% GLOBAL SPACING BETWEEN TABLE CAPTION AND TABLE (ENTIRE DOCUMENT)
-% ------------------------------------------------------------
-\setlength{\belowcaptionskip}{8pt}   % ≈ 2.8 mm space
 
 \begin{document}
 
